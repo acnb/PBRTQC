@@ -39,7 +39,7 @@ ui <- dashboardPage(
                     "Measurements should only contain",
                     "numeric values (not someting like '>1'). The '.'",
                     "character needs to be used for decimal points.")),
-              p(a("This file", href="https://www.bietenbeck.net/NA.csv"),
+              p(a("This file", href="https://www.bietenbeck.net/NA.csv", target='_blank'),
                 "contains an example with sodium measurements."
                 ))   
         ),

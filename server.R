@@ -403,8 +403,6 @@ server <- function(input, output) {
                 q025 = quantile(firstDetected, probs = .025),
                 n = n())
         
-        browser()
-        
         highestDetected <- res %>%
             filter(is.finite(firstDetected)) %>%
             pull(firstDetected) %>%
@@ -479,7 +477,7 @@ server <- function(input, output) {
         shinyjs::show(selector = ".results")
     })
     
-    url <- a("here", href="https://github.com/acnb/PBRTQC/")
+    url <- a("here", href="https://github.com/acnb/PBRTQC/", target='_blank')
     
     output$info <- renderUI({p('PBRTQC simulation version',
                                version, 
