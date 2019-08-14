@@ -357,7 +357,9 @@ server <- function(input, output) {
     
     observeEvent(input$sim, {
         shinyjs::disable("sim")
-
+        
+        
+        # changes these to allow more simulations
         biases <- input$bias/100 * c(1.5, -1, -.5, .5, 1, 1.5)
         blockSizes <- seq(10, 150, by = 35) 
         
