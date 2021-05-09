@@ -3,9 +3,11 @@ library(shinydashboard)
 library(shinyjs)
 library(here)
 library(tidyverse)
-library(rowr)
+library(slider)
+library(TTR)
 
-version <- "0.1.0"
+version <- "0.2.0"
+numberOfDaysSimulated <- 100
 
 options(shiny.maxRequestSize=7*1024^2)
 
@@ -61,15 +63,26 @@ replaceNAWithPrevious <- function(vecWoNA, NApos){
 }
 
 
+# rollingFunc <- function(f, ...) {
+#     function(measurement, blockSize, ...){
+#         c(rep(NA_real_, blockSize - 1),
+#           rollApply(measurement,
+#                     fun = f,
+#                     minimum = blockSize,
+#                     window = blockSize, 
+#                     align = "right",
+#                     ...))
+#     }
+# }
+
 rollingFunc <- function(f, ...) {
     function(measurement, blockSize, ...){
-        c(rep(NA_real_, blockSize - 1),
-          rollApply(measurement,
-                    fun = f,
-                    minimum = blockSize,
-                    window = blockSize, 
-                    align = "right",
-                    ...))
+      #  c(rep(NA_real_, blockSize - 1),
+          slide_vec(measurement,
+                    .f = f,
+                    .before = blockSize - 1,
+                    .complete = TRUE,
+                    ...)
     }
 }
 
@@ -143,11 +156,11 @@ rollMed.del <-  rollingFunc(truncatedMed.del)
 ####
 simFunction <- function(data, bias, fxs, blockSize,
                         lowerTrunc, upperTrunc, 
-                        lead, controlLimits){
+                        lead, controlLimits, calcContinous){
     
     d <- calcFunctions(data, bias, fxs, blockSize,
                        lowerTrunc, upperTrunc, 
-                       lead)
+                       lead, calcContinous)
     
     d %>%
         left_join(controlLimits, by=c("type")) %>%
@@ -162,20 +175,33 @@ simFunction <- function(data, bias, fxs, blockSize,
 
 calcFunctions <- function(data, bias, fxs, blockSize,
                           lowerTrunc, upperTrunc, 
-                          lead){
-    data %>%
-        dplyr::select(measurement, day, set) %>%
-        group_by(day, set) %>%
+                          lead, calcContinous){
+  
+  dataSel <- data %>%
+        dplyr::select(measurement, day, set)
+  
+  if (!calcContinous){
+    dataSel <- dataSel %>%
+      group_by(day, set)
+  }
+  else {
+    dataSel <- dataSel %>%
+      group_by(set)
+  }
+    
+    
+  dataSel %>%
         mutate(leadtime = 1:n() <= lead) %>%
         mutate(newValue = case_when(
-            leadtime ~ measurement,
-            !leadtime ~ measurement * (1 + bias)
+            leadtime ~ as.double(measurement),
+            !leadtime ~ as.double(measurement * (1 + bias))
         )) %>%
         mutate_at(vars(newValue), 
                   .funs = fxs, blockSize = blockSize, 
                   ll = lowerTrunc, ul = upperTrunc) %>%
         filter(!leadtime) %>%
         dplyr::select(-leadtime) %>%
+        group_by(day, set) %>%
         mutate(counter = 1:n()) %>%
         gather(type, value, -day, -measurement,
                -set, -counter, -newValue) %>%
@@ -185,14 +211,20 @@ calcFunctions <- function(data, bias, fxs, blockSize,
 ###
 
 findControlLimits <- function(data, blockSize, 
-                              lowerTrunc, upperTrunc, fxs, percAccAlarms){
+                              lowerTrunc, upperTrunc, fxs, percAccAlarms, calcContinous){
     
     lowerPerc <- percAccAlarms/2
     upperPerc <- 1 - (percAccAlarms/2)
     
-    data %>% 
-        dplyr::select(day, measurement) %>%
-        group_by(day) %>%
+    dataSel <- data %>%
+      dplyr::select(day, measurement)
+    
+    if(!calcContinous){
+      dataSel <- dataSel %>%
+        group_by(day)
+    }
+    
+    dataSel %>%
         mutate_at(vars(measurement),
                   .funs = fxs, blockSize = blockSize, 
                   ll = lowerTrunc, ul = upperTrunc) %>%
@@ -209,7 +241,7 @@ findControlLimits <- function(data, blockSize,
 }
 
 simPBRTQCapp <- function(data, blockSizes, truncationLimits, biases, fxs, 
-                         percAccAlarms){
+                         percAccAlarms, calcContinous){
     
     varsCls <- cbind(data.frame(blockSize = blockSizes), truncationLimits) 
     
@@ -222,7 +254,7 @@ simPBRTQCapp <- function(data, blockSizes, truncationLimits, biases, fxs,
                                      lowerTrunc = lowerTrunc,
                                      upperTrunc = upperTrunc, 
                                      data = data,
-                                     fxs = fxs, percAccAlarms)
+                                     fxs = fxs, percAccAlarms, calcContinous)
             list(res)
         })(blockSize, lowerTrunc, upperTrunc)) %>%
         ungroup() %>%
@@ -242,7 +274,7 @@ simPBRTQCapp <- function(data, blockSizes, truncationLimits, biases, fxs,
         mutate(r =  (function(bias, bs, trunc,
                               lowerTrunc, upperTrunc){
             
-            incProgress(1/nVars, detail = paste('Bias:', bias, 'block size:', bs))
+            incProgress(1/nVars, detail = paste('Bias:', bias, '; Block Size:', bs))
             
             thisCls <- cls %>%
                 filter(truncation == trunc & blockSize == bs) %>%
@@ -252,17 +284,18 @@ simPBRTQCapp <- function(data, blockSizes, truncationLimits, biases, fxs,
             
             if (numDays > 100){
                 data <- data %>%
-                    filter(day %in% base::sample(unique(data$day, 100)))
+                    filter(day %in% base::sample(unique(data$day, numberOfDaysSimulated)))
             }
             
-            res <- simFunction(data = data %>% filter(),
+            res <- simFunction(data = data,
                                blockSize = blockSize, 
                                lowerTrunc = lowerTrunc,
                                upperTrunc = upperTrunc,
                                controlLimits = thisCls,
                                lead = lead,
                                bias = bias,
-                               fxs = fxs)
+                               fxs = fxs,
+                               calcContinous)
             list(res)
         })(bias, blockSize, truncation, lowerTrunc, upperTrunc)) %>%
         ungroup() %>%
@@ -334,25 +367,78 @@ server <- function(input, output) {
                     value = c(min ,max), min=min, max=max, step = (max-min)/500)
     })
     
+    output$plotMeasPerDay <- renderPlot({
+      measPerDay <- csvData() %>%
+        count(day)
+      
+      ggplot(measPerDay, aes(y=n)) +
+        geom_boxplot() +
+        labs(y = "Number of measurements per day") +
+        guides(x = "none")
+    })
+    
+
+    
     observeEvent(input$file1, {
         if(!is.null(csvData())){
             shinyjs::show(selector = ".settings")
+            shinyjs::show(selector = ".statistics")
         }  
         else{
             shinyjs::hide(selector = ".settings")
+            shinyjs::hide(selector = ".statistics")
         }
         shinyjs::hide(selector = ".results")
     })
     
     observeEvent(input$truncation, {
+      rangeTruncation <- maxTruncation() - minTruncation()
+      
+      
         output$plotOverview <- renderPlot({
             ggplot(csvData() , aes(x=measurement)) +
                 geom_density() +
                 geom_vline(xintercept = minTruncation(), color = 'red') +
                 geom_vline(xintercept = maxTruncation(), color = 'red') +
-                coord_cartesian(xlim = c(pmax(min(csvData()$measurement), 0.5*minTruncation()),
-                                         pmin(max(csvData()$measurement), 2*maxTruncation())))
+                coord_cartesian(xlim = c(pmax(min(csvData()$measurement), minTruncation()-0.05*rangeTruncation),
+                                         pmin(max(csvData()$measurement), maxTruncation()+0.05*rangeTruncation)))
         })
+        
+        statsPerDay <- csvData() %>%
+          mutate(measurement = if_else(measurement > maxTruncation(), as.double(maxTruncation()), 
+                                       as.double(measurement))) %>%
+          mutate(measurement = if_else(measurement < minTruncation(), as.double(minTruncation()),
+                                       as.double(measurement))) %>%
+          group_by(day) %>%
+          summarise(
+            min = min(measurement),
+            `25%` = quantile(measurement, 0.25),
+            median = median(measurement),
+            `75%` = quantile(measurement, 0.75),
+            max = max(measurement)
+          ) %>%
+          pivot_longer(!day, names_to = "stat", values_to = 'val') %>%
+          mutate(stat = factor(stat, levels= c('max', '75%', 'median', '25%', 'min')))
+        
+        
+        
+        output$plotOverviewPerDay <- renderPlot({
+          ggplot(statsPerDay, aes(x=day, y=val, color=stat)) +
+            geom_point() +
+            geom_smooth() +
+            geom_hline(yintercept = minTruncation(), color = 'red') +
+            geom_hline(yintercept = maxTruncation(), color = 'red') +
+            coord_cartesian(ylim = c(minTruncation()-0.05*rangeTruncation,
+                                     maxTruncation()+0.05*rangeTruncation)) +
+            scale_color_manual(values=c("#fdae61", "#abd9e9", "#2c7bb6", "#abd9e9", '#fdae61'),
+                               labels = c('max', '75%', 'median', '25%', 'min'))
+        })
+        
+        nDays <- length(unique(csvData()$day))
+        overall <- nrow(csvData())
+        
+        output$nDays <- renderText({ paste(overall, "measurements on", nDays, " days uploaded." )})
+        
     })
     
     observeEvent(input$sim, {
@@ -360,7 +446,7 @@ server <- function(input, output) {
         
         
         # changes these to allow more simulations
-        biases <- input$bias/100 * c(1.5, -1, -.5, .5, 1, 1.5)
+        biases <- input$bias/100 * c(1.5, -1, -.5, 0, .5, 1, 1.5)
         blockSizes <- seq(10, 150, by = 35) 
         
         funcsAll <- switch (input$algo,
@@ -381,9 +467,11 @@ server <- function(input, output) {
         
         startTime <- Sys.time()
         
+        calcContinous <- input$algorithmMode == 'continuous'
+        
         res <- withProgress(message = 'Simulation in progress',
                             simPBRTQCapp(data,
-                  blockSizes, truncationLimits, biases, funcsAll, input$perc/100)
+                  blockSizes, truncationLimits, biases, funcsAll, input$perc/100, calcContinous)
         )
         stopTime <- Sys.time()
         
