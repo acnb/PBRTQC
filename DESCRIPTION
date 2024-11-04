@@ -1,0 +1,23 @@
+Package: PBRTQC
+Title:  Patient-based Real-Time Quality Control simualtion
+Version: 0.3.0
+Authors@R: 
+    person("Andreas", "Bietenbeck", , "lab@bietenbeck.net", role = c("aut", "cre"),
+           comment = c(ORCID = "0000-0002-1228-0770"))
+Description: Package for simulation of Patient-based Real-Time Quality Control in Clinical Chemistry.
+License: AGPL (>= 3)
+Imports: 
+    dplyr,
+    ggplot2,
+    here,
+    scales,
+    shiny,
+    shinydashboard,
+    shinyjs,
+    slider,
+    tibble,
+    tidyr,
+    TTR
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.0.0

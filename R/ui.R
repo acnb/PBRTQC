@@ -1,13 +1,10 @@
-library(shinydashboard)
-library(shinyjs)
-
-ui <- dashboardPage(
-    dashboardHeader(title = "PBRTQC simulation"),
-    dashboardSidebar(disable = TRUE),
-    dashboardBody(
-        useShinyjs(),
-        fluidRow(
-            box(
+ui <- shinydashboard::dashboardPage(
+  shinydashboard::dashboardHeader(title = "PBRTQC simulation"),
+  shinydashboard::dashboardSidebar(disable = TRUE),
+  shinydashboard::dashboardBody(
+    shinyjs::useShinyjs(),
+    shiny::fluidRow(
+      shinydashboard::box(
                 title = 'Instructions',
                 width = 4,
                 p(
@@ -25,10 +22,10 @@ ui <- dashboardPage(
                     "contains an example with sodium measurements."
                 )
             ),
-            box(
+            shinydashboard::box(
                 title = "Data input",
                 width = 4,
-                fileInput(
+                shiny::fileInput(
                     "file1",
                     "Choose CSV File",
                     multiple = FALSE,
@@ -38,10 +35,10 @@ ui <- dashboardPage(
                 ),
                 
                 # Input: Checkbox if file has header ----
-                checkboxInput("header", "Header", TRUE),
+                shiny::checkboxInput("header", "Header", TRUE),
                 
                 # Input: Select separator ----
-                radioButtons(
+                shiny::radioButtons(
                     "sep",
                     "Separator",
                     choices = c(
@@ -53,7 +50,7 @@ ui <- dashboardPage(
                 ),
                 
                 # Input: Select quotes ----
-                radioButtons(
+                shiny::radioButtons(
                     "quote",
                     "Quote",
                     choices = c(
@@ -64,43 +61,43 @@ ui <- dashboardPage(
                     selected = '"'
                 )
             ),
-            box(
+            shinydashboard::box(
                 title = "Measurements per day",
                 width = 4,
-                plotOutput("plotMeasPerDay"),
-                textOutput("nDays")
+                shiny::plotOutput("plotMeasPerDay"),
+                shiny::textOutput("nDays")
             )
         ),
-        hidden(fluidRow(
+        shinyjs::hidden(shiny::fluidRow(
             class = "statistics",
-            box(
+            shinydashboard::box(
                 title = "Distribution of measurements after truncation",
                 width = 12,
-                plotOutput("plotOverviewPerDay")
+                shiny::plotOutput("plotOverviewPerDay")
             ),
         )),
-        hidden(fluidRow(
+        shinyjs::hidden(shiny::fluidRow(
             class = "settings",
-            box(
+            shinydashboard::box(
                 title = "Settings",
                 width = 12,
-                plotOutput("plotOverview"),
-                uiOutput('slider'),
-                numericInput(
+                shiny::plotOutput("plotOverview"),
+                shiny::uiOutput('slider'),
+                shiny::numericInput(
                     'perc',
                     "Acceptable number of days with false alarm (%)",
                     min = 0,
                     max = 15,
                     value = 10
                 ),
-                numericInput(
+                shiny::numericInput(
                     'bias',
                     "Allowable bias (%)",
                     value = 3,
                     min = 1,
                     max = 50
                 ),
-                selectInput(
+                shiny::selectInput(
                     "algo",
                     'Algorithm',
                     choices =
@@ -113,7 +110,7 @@ ui <- dashboardPage(
                             'Moving Median with Removal of Outliers' = 'median.del'
                         )
                 ),
-                radioButtons(
+                shiny::radioButtons(
                     "algorithmMode",
                     "Algorithm mode",
                     choices = c(
@@ -122,37 +119,37 @@ ui <- dashboardPage(
                     ),
                     selected = "newEachDay"
                 ),
-                actionButton("sim", "   Simulate", icon = icon("cogs"))
+                shiny::actionButton ("sim", "   Simulate", icon = icon("cogs"))
             )
         )),
-        hidden(fluidRow(
+        shinyjs::hidden(shiny::fluidRow(
             class = "results",
-            box(
+            shinydashboard::box(
                 title = "Best Overall MNPed",
                 id = "MNPedbox",
                 width = 4,
-                plotOutput("plotMNPedOverall"),
+                shiny::plotOutput("plotMNPedOverall"),
                 verbatimTextOutput("textMNPedOverall")
             ),
-            box(
+            shinydashboard::box(
                 title = "Best Overall 95NPed",
                 id = "q95Pedbox",
                 width = 4,
-                plotOutput("plot95NPedOverall"),
+                shiny::plotOutput("plot95NPedOverall"),
                 verbatimTextOutput("text95NPedOverall")
             ),
-            box(
+           shinydashboard::box(
                 title = "best settings based on allowable bias",
                 id = "biasbox",
                 width = 4,
-                plotOutput("plotBestBias"),
+                shiny::plotOutput("plotBestBias"),
                 verbatimTextOutput("textBestBias")
             )
         )),
-        fluidRow(box(
+        shiny::fluidRow(shinydashboard::box(
             title = "",
             width = 12,
-            uiOutput("info")
+            shiny::uiOutput("info")
         ))
     )
 )

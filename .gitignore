@@ -16,6 +16,8 @@
 
 # RStudio files
 .Rproj.user/
+.Rbuildignore
+*.RProj
 
 # produced vignettes
 vignettes/*.html
