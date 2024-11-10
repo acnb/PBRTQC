@@ -1,11 +1,75 @@
-replaceNAWithPrevious <- function(vecWoNA, NApos){
-  if(length(NApos) == 0){
-    return(vecWoNA)
+simPBRTQC <- function(data, blockSizes, truncationLimits, biases, fxs, 
+                         percAccAlarms, calcContinous){
+  
+  varsCls <- cbind(data.frame(blockSize = blockSizes), truncationLimits) 
+  
+  if (shiny::isRunning()){
+    shiny::incProgress(0, detail = 'Control limits')
   }
-  else{
-    pos <- pmax(NApos-(1:length(NApos)), 1)
-    return(vecWoNA[sort(c(pos, 1:length(vecWoNA)))])
-  }
+  
+  ss <- Sys.time()
+  cls <- varsCls |>
+    dplyr::rowwise() |>
+    dplyr::mutate(r =  (function(blockSize, lowerTrunc, upperTrunc){
+      res <- findControlLimits(blockSize = blockSize, 
+                               lowerTrunc = lowerTrunc,
+                               upperTrunc = upperTrunc, 
+                               data = data,
+                               fxs = fxs, percAccAlarms, calcContinous)
+      list(res)
+    })(blockSize, lowerTrunc, upperTrunc)) |>
+    dplyr::ungroup() |>
+    tidyr::unnest(cols  = c(r)) |>
+    dplyr::select(truncation, type, blockSize,  ucl, lcl)
+  
+  ee <- Sys.time()
+  lead <- max(blockSizes)
+  
+  params <- varsCls |>
+    tidyr::crossing(tibble::tibble(bias = biases))
+  
+  nVars <- nrow(params)
+  
+  results <- params |>
+    dplyr::rowwise() |>
+    dplyr::mutate(r =  (function(bias, bs, trunc,
+                                 lowerTrunc, upperTrunc){
+      
+      if (shiny::isRunning()){
+        shiny::incProgress(1/nVars, detail = paste('Bias:', bias, 
+                                                   '; Block Size:', bs))
+      } else {
+       message(paste('Bias:', bias, '; Block Size:', bs))
+      }
+      
+      thisCls <- cls |>
+        dplyr::filter(truncation == trunc & blockSize == bs) |>
+        dplyr::select(-truncation, -blockSize)
+      
+      numDays <- length(unique(data$day))   
+      
+      if (numDays > 100 & shiny::isRunning()){
+        data <- data |>
+          dplyr::filter(day %in% base::sample(unique(data$day, 
+                                                     numberOfDaysSimulated)))
+      }
+      
+      res <- simFunction(data = data,
+                         blockSize = blockSize, 
+                         lowerTrunc = lowerTrunc,
+                         upperTrunc = upperTrunc,
+                         controlLimits = thisCls,
+                         lead = lead,
+                         bias = bias,
+                         fxs = fxs,
+                         calcContinous)
+      
+      list(res)
+    })(bias, blockSize, truncation, lowerTrunc, upperTrunc)) |>
+    dplyr::ungroup() |>
+    tidyr::unnest(cols  = c(r))
+  
+  results
 }
 
 
@@ -19,7 +83,7 @@ simFunction <- function(data, bias, fxs, blockSize,
   
   d |>
     dplyr::left_join(controlLimits, by=c("type")) |>
-    dplyr::group_by(day, set, type) |>
+    dplyr::group_by(day, type) |>
     dplyr::mutate(detected = value < lcl | value > ucl) |>
     dplyr::summarise(firstDetected = suppressWarnings(min(counter[detected], 
                                                           na.rm = TRUE)), 
@@ -32,17 +96,12 @@ calcFunctions <- function(data, bias, fxs, blockSize,
                           lead, calcContinous){
   
   dataSel <- data |>
-    dplyr::select(measurement, day, set)
+    dplyr::select(measurement, day)
   
   if (!calcContinous){
     dataSel <- dataSel |>
-      dplyr::group_by(day, set)
+      dplyr::group_by(day)
   }
-  else {
-    dataSel <- dataSel |>
-      dplyr::group_by(set)
-  }
-  
   
   dataSel |>
     dplyr::mutate(leadtime = 1:dplyr::n() <= lead) |>
@@ -55,10 +114,10 @@ calcFunctions <- function(data, bias, fxs, blockSize,
                      ll = lowerTrunc, ul = upperTrunc) |>
     dplyr::filter(!leadtime) |>
     dplyr::select(-leadtime) |>
-    dplyr::group_by(day, set) |>
+    dplyr::group_by(day) |>
     dplyr::mutate(counter = 1:dplyr::n()) |>
     tidyr::gather(type, value, -day, -measurement,
-                  -set, -counter, -newValue) |>
+                  -counter, -newValue) |>
     dplyr::ungroup()
 }
 

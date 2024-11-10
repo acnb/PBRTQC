@@ -1,5 +1,5 @@
 Package: PBRTQC
-Title:  Patient-based Real-Time Quality Control simualtion
+Title: Patient-based Real-Time Quality Control simualtion
 Version: 0.3.0
 Authors@R: 
     person("Andreas", "Bietenbeck", , "lab@bietenbeck.net", role = c("aut", "cre"),
@@ -10,6 +10,7 @@ Imports:
     dplyr,
     ggplot2,
     here,
+    progress,
     scales,
     shiny,
     shinydashboard,

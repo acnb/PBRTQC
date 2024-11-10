@@ -44,70 +44,6 @@ dataToText <- function(data, tll, tul){
     res
 }
 
-simPBRTQCapp <- function(data, blockSizes, truncationLimits, biases, fxs, 
-                         percAccAlarms, calcContinous){
-    
-    varsCls <- cbind(data.frame(blockSize = blockSizes), truncationLimits) 
-    
-    incProgress(0, detail = 'Control limits')
-    ss <- Sys.time()
-    cls <- varsCls |>
-        dplyr::rowwise() |>
-        dplyr::mutate(r =  (function(blockSize, lowerTrunc, upperTrunc){
-            res <- findControlLimits(blockSize = blockSize, 
-                                     lowerTrunc = lowerTrunc,
-                                     upperTrunc = upperTrunc, 
-                                     data = data,
-                                     fxs = fxs, percAccAlarms, calcContinous)
-            list(res)
-        })(blockSize, lowerTrunc, upperTrunc)) |>
-        dplyr::ungroup() |>
-        tidyr::unnest() |>
-        dplyr::select(truncation, type, blockSize,  ucl, lcl)
-    
-    ee <- Sys.time()
-    lead <- max(blockSizes)
-    
-    params <- varsCls |>
-      tidyr::crossing(tibble::tibble(bias = biases))
-    
-    nVars <- nrow(params)
-    
-    results <- params |>
-        dplyr::rowwise() |>
-        dplyr::mutate(r =  (function(bias, bs, trunc,
-                              lowerTrunc, upperTrunc){
-            
-            incProgress(1/nVars, detail = paste('Bias:', bias, '; Block Size:', bs))
-            
-            thisCls <- cls |>
-                dplyr::filter(truncation == trunc & blockSize == bs) |>
-                dplyr::select(-truncation, -blockSize)
-            
-            numDays <- length(unique(data$day))   
-            
-            if (numDays > 100){
-                data <- data |>
-                    dplyr::filter(day %in% base::sample(unique(data$day, numberOfDaysSimulated)))
-            }
-            
-            res <- simFunction(data = data,
-                               blockSize = blockSize, 
-                               lowerTrunc = lowerTrunc,
-                               upperTrunc = upperTrunc,
-                               controlLimits = thisCls,
-                               lead = lead,
-                               bias = bias,
-                               fxs = fxs,
-                               calcContinous)
-            list(res)
-        })(bias, blockSize, truncation, lowerTrunc, upperTrunc)) |>
-        dplyr::ungroup() |>
-        tidyr::unnest()
-    
-    results
-}
-
 server <- function(input, output) {
     
     csvData <- reactive({ 
@@ -265,8 +201,7 @@ server <- function(input, output) {
         )
         
         data <- csvData()
-        data$set <- 'train'
-        
+
         truncationLimits <- data.frame('lowerTrunc' = minTruncation(),
                                        'upperTrunc' = maxTruncation(), 
                                        'truncation' = 'userSelected')
@@ -275,9 +210,10 @@ server <- function(input, output) {
         
         calcContinous <- input$algorithmMode == 'continuous'
         
-        res <- withProgress(message = 'Simulation in progress',
-                            simPBRTQCapp(data,
-                  blockSizes, truncationLimits, biases, funcsAll, input$perc/100, calcContinous)
+        res <- shiny::withProgress(message = 'Simulation in progress',
+                            simPBRTQC(data,
+                  blockSizes, truncationLimits, biases, funcsAll, 
+                  input$perc/100, calcContinous)
         )
         stopTime <- Sys.time()
         

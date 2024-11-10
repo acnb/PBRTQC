@@ -7,7 +7,7 @@ ui <- shinydashboard::dashboardPage(
       shinydashboard::box(
                 title = 'Instructions',
                 width = 4,
-                p(
+                shiny::p(
                     paste(
                         "Please provide a file comma separated",
                         "values file (.csv) with a 'column' day and a column",
@@ -17,8 +17,8 @@ ui <- shinydashboard::dashboardPage(
                         "character needs to be used for decimal points."
                     )
                 ),
-                p(
-                    a("This file", href = "https://www.bietenbeck.net/NA.csv", target = '_blank'),
+                shiny::p(
+                  shiny::a("This file", href = "https://www.bietenbeck.net/NA.csv", target = '_blank'),
                     "contains an example with sodium measurements."
                 )
             ),
@@ -119,7 +119,8 @@ ui <- shinydashboard::dashboardPage(
                     ),
                     selected = "newEachDay"
                 ),
-                shiny::actionButton ("sim", "   Simulate", icon = icon("cogs"))
+                shiny::actionButton ("sim", "   Simulate", icon = 
+                                       shiny::icon("cogs"))
             )
         )),
         shinyjs::hidden(shiny::fluidRow(
@@ -129,21 +130,21 @@ ui <- shinydashboard::dashboardPage(
                 id = "MNPedbox",
                 width = 4,
                 shiny::plotOutput("plotMNPedOverall"),
-                verbatimTextOutput("textMNPedOverall")
+                shiny::verbatimTextOutput("textMNPedOverall")
             ),
             shinydashboard::box(
                 title = "Best Overall 95NPed",
                 id = "q95Pedbox",
                 width = 4,
                 shiny::plotOutput("plot95NPedOverall"),
-                verbatimTextOutput("text95NPedOverall")
+                shiny::verbatimTextOutput("text95NPedOverall")
             ),
            shinydashboard::box(
                 title = "best settings based on allowable bias",
                 id = "biasbox",
                 width = 4,
                 shiny::plotOutput("plotBestBias"),
-                verbatimTextOutput("textBestBias")
+                shiny::verbatimTextOutput("textBestBias")
             )
         )),
         shiny::fluidRow(shinydashboard::box(

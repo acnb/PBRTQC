@@ -9,6 +9,16 @@ rollingFunc <- function(f, ...) {
   }
 }
 
+replaceNAWithPrevious <- function(vecWoNA, NApos){
+  if(length(NApos) == 0){
+    return(vecWoNA)
+  }
+  else{
+    pos <- pmax(NApos-(1:length(NApos)), 1)
+    return(vecWoNA[sort(c(pos, 1:length(vecWoNA)))])
+  }
+}
+
 truncatedMean <- function(measurement, ll, ul){
   measurement[measurement < ll] <- ll
   measurement[measurement > ul] <- ul
