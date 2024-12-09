@@ -98,6 +98,8 @@ calcFunctions <- function(data, bias, fxs, blockSize,
   dataSel <- data |>
     dplyr::select(measurement, day)
   
+  dataExtra <- data 
+  
   if (!calcContinous){
     dataSel <- dataSel |>
       dplyr::group_by(day)
@@ -111,7 +113,8 @@ calcFunctions <- function(data, bias, fxs, blockSize,
     )) |>
     dplyr::mutate_at(dplyr::vars(newValue), 
                      .funs = fxs, blockSize = blockSize, 
-                     ll = lowerTrunc, ul = upperTrunc) |>
+                     ll = lowerTrunc, ul = upperTrunc,
+                     dataExtra = dataExtra) |>
     dplyr::filter(!leadtime) |>
     dplyr::select(-leadtime) |>
     dplyr::group_by(day) |>
@@ -149,4 +152,10 @@ findControlLimits <- function(data, blockSize,
                      ucl =  quantile(maxday, upperPerc, names = FALSE)
     ) |>
     dplyr::ungroup()
+}
+
+winsorize <- function(x, ll, ul){
+  x[x < ll] <- ll
+  x[x > ul] <- ul
+  x
 }

@@ -38,15 +38,28 @@ truncatedMed <- function(measurement, ll, ul){
   median(measurement)
 }
 
+
+#' Exponential Moving Average with winsorizing
+#'
+#' @param measurement a vector of measurements 
+#' @param blockSize the block size
+#' @param ll lower limit for winsorizing
+#' @param ul upper limit for winsorizing
+#'
+#' @return vector of exponential moving averages
+#' @export
 truncatedEMA <- function(measurement, blockSize, ll, ul){
   measurement[measurement < ll] <- ll
   measurement[measurement > ul] <- ul
+  
+  NAidx <- which(is.na(measurement))
   
   if(length(measurement) <= blockSize){
     return(rep(NA, length(measurement)))
   }
   else{
-    TTR::EMA(measurement, n = blockSize)
+    res <- TTR::EMA(na.omit(measurement), n = blockSize)
+    replaceNAWithPrevious(res, NAidx) 
   }
 }
 
@@ -71,7 +84,7 @@ truncatedEMA.del <- function(measurement, blockSize, ll, ul){
     return(rep(NA, length(measurement)))
   }
   else{
-    res <- EMA(measurement[idx], n = blockSize)
+    res <- TTR::EMA(measurement[idx], n = blockSize)
     replaceNAWithPrevious(res, NAidx) 
   }
 }
