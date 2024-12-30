@@ -89,7 +89,11 @@ truncatedEMA.del <- function(measurement, blockSize, ll, ul){
   }
 }
 
-rollMean <- rollingFunc(truncatedMean)
+rollMean <- function(measurement, blockSize, ll, ul, ...){
+  fx <- rollingFunc(truncatedMean)
+  fx(measurement, blockSize, ll, ul)
+}
+
 rollLogMean <- rollingFunc(logMean)
 rollMed <-  rollingFunc(truncatedMed)
 

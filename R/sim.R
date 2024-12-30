@@ -1,6 +1,8 @@
 simPBRTQC <- function(data, blockSizes, truncationLimits, biases, fxs, 
                          percAccAlarms, calcContinous){
   
+  numberOfDaysSimulated <- 100
+  
   varsCls <- cbind(data.frame(blockSize = blockSizes), truncationLimits) 
   
   if (shiny::isRunning()){
@@ -48,7 +50,7 @@ simPBRTQC <- function(data, blockSizes, truncationLimits, biases, fxs,
       
       numDays <- length(unique(data$day))   
       
-      if (numDays > 100 & shiny::isRunning()){
+      if (numDays > 100 & shiny::isRunning()  && FALSE){
         data <- data |>
           dplyr::filter(day %in% base::sample(unique(data$day, 
                                                      numberOfDaysSimulated)))
@@ -103,7 +105,11 @@ calcFunctions <- function(data, bias, fxs, blockSize,
   if (!calcContinous){
     dataSel <- dataSel |>
       dplyr::group_by(day)
+    
+    dataExtra <- dataExtra |>
+      dplyr::group_by(day)
   }
+
   
   dataSel |>
     dplyr::mutate(leadtime = 1:dplyr::n() <= lead) |>
@@ -133,15 +139,21 @@ findControlLimits <- function(data, blockSize,
   dataSel <- data |>
     dplyr::select(day, measurement)
   
+  dataExtra <- data
+  
   if(!calcContinous){
     dataSel <- dataSel |>
+      dplyr::group_by(day)
+    
+    dataExtra <- dataExtra |>
       dplyr::group_by(day)
   }
   
   dataSel |>
     dplyr::mutate_at(dplyr::vars(measurement),
                      .funs = fxs, blockSize = blockSize, 
-                     ll = lowerTrunc, ul = upperTrunc) |>
+                     ll = lowerTrunc, ul = upperTrunc,
+                     dataExtra = dataExtra) |>
     tidyr::gather(type, value, -day, -measurement) |>
     dplyr::group_by(day, type) |>
     dplyr::filter(!is.na(value)) |>

@@ -7,10 +7,12 @@ Authors@R:
 Description: Package for simulation of Patient-based Real-Time Quality Control in Clinical Chemistry.
 License: AGPL (>= 3)
 Imports: 
+    digest,
     dplyr,
     ggplot2,
     here,
     lme4,
+    merTools,
     multilevelmod,
     parsnip,
     progress,
