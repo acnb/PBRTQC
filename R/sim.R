@@ -84,7 +84,7 @@ simFunction <- function(data, bias, fxs, blockSize,
                      lead, calcContinous)
   
   d |>
-    dplyr::left_join(controlLimits, by=c("type")) |>
+    dplyr::left_join(controlLimits, dplyr::join_by("type")) |>
     dplyr::group_by(day, type) |>
     dplyr::mutate(detected = value < lcl | value > ucl) |>
     dplyr::summarise(firstDetected = suppressWarnings(min(counter[detected], 
