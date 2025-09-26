@@ -1,3 +1,33 @@
+#' Simualtion of PBRTQC methods
+#'
+#' @param data data.frame 
+#' @param blockSizes numeric vector 
+#' @param truncationLimits data.frame with columns 'lowerTrunc', 'upperTrunc' 
+#'                          and 'truncation'.
+#' @param biases numeric vector
+#' @param fxs named list of functions for PBRTQC algorithms.
+#' @param percAccAlarms percentage of acceptable false alarms per day
+#' @param calcContinous 
+#'
+#' @returns data.frame with results
+#' @export 
+#'
+#' @examples
+#' \dontrun{
+#' biases <- bias * seq(-1.5, 1.5, by=0.2)
+#' blockSizes <- seq(10, 150, by = 20)
+#' fxs <- list("mean" = rollMean, 
+#'             'median' = rollMed,
+#'             'EMA' = truncatedEMA)
+#'  truncationLimits <- data.frame('lowerTrunc' = ll,
+#'                                 'upperTrunc' = ul, 
+#'                                 'truncation' = 'userSelected')
+#'  res <- simPBRTQC(dataForSim,
+#'                   blockSizes, truncationLimits, biases, fxs, 
+#'                    0.05)
+#' }
+#' 
+#' 
 simPBRTQC <- function(data, blockSizes, truncationLimits, biases, fxs, 
                          percAccAlarms, calcContinous){
   

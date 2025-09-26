@@ -19,20 +19,20 @@ replaceNAWithPrevious <- function(vecWoNA, NApos){
   }
 }
 
-truncatedMean <- function(measurement, ll, ul){
+truncatedMean <- function(measurement, ll, ul, dataExtra = NULL){
   measurement[measurement < ll] <- ll
   measurement[measurement > ul] <- ul
   mean(measurement)
 }
 
-logMean <- function(measurement, ll, ul){
+logMean <- function(measurement, ll, ul, dataExtra = NULL){
   measurement[measurement < ll] <- ll
   measurement[measurement > ul] <- ul
   measurement <- measurement + 10^5
   mean(log(measurement))
 }
 
-truncatedMed <- function(measurement, ll, ul){
+truncatedMed <- function(measurement, ll, ul, dataExtra = NULL){
   measurement[measurement < ll] <- ll
   measurement[measurement > ul] <- ul
   median(measurement)
@@ -48,7 +48,7 @@ truncatedMed <- function(measurement, ll, ul){
 #'
 #' @return vector of exponential moving averages
 #' @export
-truncatedEMA <- function(measurement, blockSize, ll, ul){
+truncatedEMA <- function(measurement, blockSize, ll, ul, dataExtra = NULL){
   measurement[measurement < ll] <- ll
   measurement[measurement > ul] <- ul
   
@@ -63,7 +63,7 @@ truncatedEMA <- function(measurement, blockSize, ll, ul){
   }
 }
 
-truncatedlogEMA <- function(measurement, blockSize, ll, ul){
+truncatedlogEMA <- function(measurement, blockSize, ll, ul, dataExtra = NULL){
   measurement[measurement < ll] <- ll
   measurement[measurement > ul] <- ul
   measurement <- measurement + 10^5
@@ -76,7 +76,7 @@ truncatedlogEMA <- function(measurement, blockSize, ll, ul){
   }
 }
 
-truncatedEMA.del <- function(measurement, blockSize, ll, ul){
+truncatedEMA.del <- function(measurement, blockSize, ll, ul, dataExtra = NULL){
   idx <- which(measurement >= ll & measurement <= ul)
   NAidx <- which(!(measurement >= ll & measurement <= ul))
   

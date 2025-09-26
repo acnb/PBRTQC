@@ -7,9 +7,9 @@
 #' @export
 regAdjEMA <- function(measurement, blockSize, ll, ul, dataExtra){
   # settings
-  offsetDataStart <- 80 
-  offsetDataStop <- 20
-  recalculate <- 5
+  offsetDataStart <- 120 # start Model Data
+  offsetDataStop <- 20 # Stop Model Data
+  recalculate <- 20 # recalculate every x days
   
   dataExtra <- dataExtra |>
     dplyr::mutate(dayGrp = floor(day/recalculate),
@@ -71,6 +71,8 @@ regAdjEMA <- function(measurement, blockSize, ll, ul, dataExtra){
     dataForPrediction$measurementWithErrors <-
       parsnip::predict_raw(model, dataForPrediction, 
                            opts=list(allow.new.levels = TRUE))
+    
+    dataForPrediction$measurement - dataForPrediction$measurementWithErrors
     }
     else {
       dataForPrediction <- dataExtra |>
