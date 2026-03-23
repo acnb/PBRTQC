@@ -25,7 +25,8 @@ app <- function(...){
     'ema.del' = 'Exponential (weighted) Moving Average with Removal of Outliers',
     'median' = 'Moving Median with Winsorizing', 
     'median.del' = 'Moving Median with Removal of Outliers',
-    'regAdjEMA' = 'Regression adjusted PBRTQC'
+    'regAdjEMA'   = 'Regression adjusted PBRTQC',
+    'device_diff' = 'Device Difference (per-device vs overall median)'
   )
   
   dataToText <- function(data, tll, tul){
@@ -49,7 +50,8 @@ app <- function(...){
     # One registry per session — no shared global state.
     # To add a future advanced algorithm: append to this list.
     advancedRegistry <- list(
-      regAdjEMA = makeRegAdjEMA()
+      regAdjEMA  = makeRegAdjEMA(),
+      deviceDiff = makeDeviceDiff()
     )
     csvData <- shiny::reactive({ 
       shiny::req(input$file1)
@@ -204,7 +206,8 @@ app <- function(...){
                           'median.del'= list("median.del"= rollMed.del),
                           'ema'       = list("EMA"       = truncatedEMA),
                           'ema.del'   = list("EMA.del"   = truncatedEMA.del),
-                          'regAdjEMA' = list("regAdjEMA" = advancedRegistry$regAdjEMA$fn)
+                          'regAdjEMA'   = list("regAdjEMA"   = advancedRegistry$regAdjEMA$fn),
+                          'device_diff' = list("deviceDiff"  = advancedRegistry$deviceDiff$fn)
       )
       
       data <- csvData()
@@ -467,7 +470,8 @@ app <- function(...){
                 'Exponential (weighted) Moving Average with Removal of Outliers' = 'ema.del',
                 'Moving Median with Winsorizing' = 'median',
                 'Moving Median with Removal of Outliers' = 'median.del',
-                'Regression Adjusted PBRTQC' = 'regAdjEMA'
+                'Regression Adjusted PBRTQC' = 'regAdjEMA',
+                'Device Difference (per-device vs overall median)' = 'device_diff'
               )
           ),
           shiny::radioButtons(

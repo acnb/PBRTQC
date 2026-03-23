@@ -95,6 +95,48 @@ makeRegAdjEMA <- function(offsetDataStart = 120,
 }
   
 
+#' Factory for device-difference PBRTQC
+#'
+#' At each time point computes the difference between the per-device rolling
+#' median and the overall rolling median.  Requires a column \code{device} in
+#' \code{dataExtra}.
+#'
+#' @return A list with \code{fn} and \code{getStore} (same interface as
+#'   \code{\link{makeRegAdjEMA}})
+#' @export
+makeDeviceDiff <- function() {
+  fn <- function(measurement, blockSize, ll, ul, dataExtra) {
+    measurement[measurement < ll] <- ll
+    measurement[measurement > ul] <- ul
+
+    n      <- length(measurement)
+    device <- dataExtra$device
+
+    overall_med <- slider::slide_dbl(
+      measurement, median,
+      .before   = blockSize - 1,
+      .complete = TRUE
+    )
+
+    device_med <- rep(NA_real_, n)
+    for (dev in unique(device)) {
+      idx <- which(device == dev)
+      device_med[idx] <- slider::slide_dbl(
+        measurement[idx], median,
+        .before   = blockSize - 1,
+        .complete = TRUE
+      )
+    }
+
+    device_med - overall_med
+  }
+
+  getStore <- function() list()
+
+  list(fn = fn, getStore = getStore)
+}
+
+
 analyse_models <- function(store){
   purrr::map(names(store), function(n){
     if (n == 'regAdj'){
