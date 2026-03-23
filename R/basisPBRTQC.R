@@ -13,10 +13,9 @@ replaceNAWithPrevious <- function(vecWoNA, NApos){
   if(length(NApos) == 0){
     return(vecWoNA)
   }
-  else{
-    pos <- pmax(NApos-(1:length(NApos)), 1)
-    return(vecWoNA[sort(c(pos, 1:length(vecWoNA)))])
-  }
+  result <- rep(NA_real_, length(vecWoNA) + length(NApos))
+  result[-NApos] <- vecWoNA
+  zoo::na.locf(result, na.rm = FALSE)
 }
 
 truncatedMean <- function(measurement, ll, ul, dataExtra = NULL){
