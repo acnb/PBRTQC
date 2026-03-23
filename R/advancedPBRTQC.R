@@ -1,120 +1,97 @@
-#' Regression adjusted PBRTQC
-#' 
-#' @inheritParams truncatedEMA
-#' @param dataExtra 
+#' Factory for regression-adjusted PBRTQC
 #'
-#' @return
+#' Creates an isolated instance of the regAdjEMA algorithm with its own
+#' model cache. Each call returns a fresh instance, so Shiny sessions and
+#' scripts stay independent with no shared global state.
+#'
+#' @param offsetDataStart Days of history before the current window (default: 120)
+#' @param offsetDataStop  Days before the current window where history stops (default: 20)
+#' @param recalculate     Recalculate model every this many days (default: 20)
+#'
+#' @return A list with:
+#'   \describe{
+#'     \item{\code{fn}}{Algorithm function to pass to \code{simPBRTQC()}}
+#'     \item{\code{getStore}}{Returns cached models for \code{analyse_models()}}
+#'   }
 #' @export
-regAdjEMA <- function(measurement, blockSize, ll, ul, dataExtra){
-  # settings
-  offsetDataStart <- 120 # start Model Data
-  offsetDataStop <- 20 # Stop Model Data
-  recalculate <- 20 # recalculate every x days
-  
-  dataExtra <- dataExtra |>
-    dplyr::mutate(dayGrp = floor(day/recalculate),
-                  measurement = winsorize(.data$measurement, ll = ll, ul = ul),
-                  measurementWithErrors = 
-                    winsorize(.env$measurement, ll = ll, ul = ul))
- 
-  predictedVsMeasured <- purrr::map(unique(dataExtra$dayGrp), function(dg){
-    minDay <- dataExtra |>
-      dplyr::filter(dayGrp == dg) |>
-      dplyr::pull(day) |>
-      min()
-    
-    dataForModel <- dataExtra |>
-      dplyr::ungroup() |>
-      dplyr::select(-measurementWithErrors, -dayGrp) |>
-      dplyr::filter(dplyr::between(day, 
-                                   minDay-offsetDataStart, 
-                                   minDay-offsetDataStop))
-    
-    if(nrow(dataForModel) > 0){
-      
-    # formula is generated from variables in dataExtra
-    form <- "measurement ~ "
-    vars <- colnames(dataForModel)
-    vars <- vars[!vars %in% c('measurement', 'dayGrp', 'day',
-                              "measurementWithErrors")]
-    for(v in vars){
-      if(is.numeric(dataForModel[[v]][1])){
-        form <- paste0(form, v, " +")
-      } else{
-        if (length(unique(dataForModel[[v]])) > 1){
-          form <- paste0(form, "(1|", v, ") +")
-        }
-      }
-    }
-    form <- stringr::str_sub(form, end=-2)
-    
-    form <- as.formula(form)
-    
-    library(multilevelmod)
-    
-    hash <- digest::digest(dataForModel)
-    model <- retrieve_advanced_model('regAdj', hash)
-    
-    if (is.null(model)){
-      from <- min(dataForModel$day)
-      to <- max(dataForModel$day)
+makeRegAdjEMA <- function(offsetDataStart = 120,
+                          offsetDataStop  = 20,
+                          recalculate     = 20) {
+  .cache <- list()
 
-      model <- parsnip::linear_reg() |>
-        parsnip::set_engine("lmer") |>
-        parsnip::fit(formula = form, data = dataForModel) |>
-        store_advanced_model('regAdj', hash, from, to)
-    } 
-    
-    dataForPrediction <- dataExtra |>
-      dplyr::filter(dayGrp == dg)
-    
-    dataForPrediction$measurementWithErrors <-
-      parsnip::predict_raw(model, dataForPrediction, 
-                           opts=list(allow.new.levels = TRUE))
-    
-    dataForPrediction$measurement - dataForPrediction$measurementWithErrors
-    }
-    else {
+  fn <- function(measurement, blockSize, ll, ul, dataExtra) {
+    dataExtra <- dataExtra |>
+      dplyr::mutate(
+        dayGrp               = floor(day / recalculate),
+        measurement          = winsorize(.data$measurement, ll = ll, ul = ul),
+        measurementWithErrors = winsorize(.env$measurement, ll = ll, ul = ul)
+      )
+
+    predictedVsMeasured <- purrr::map(unique(dataExtra$dayGrp), function(dg) {
+      minDay <- dataExtra |>
+        dplyr::filter(dayGrp == dg) |>
+        dplyr::pull(day) |>
+        min()
+
+      dataForModel <- dataExtra |>
+        dplyr::ungroup() |>
+        dplyr::select(-measurementWithErrors, -dayGrp) |>
+        dplyr::filter(dplyr::between(day,
+                                     minDay - offsetDataStart,
+                                     minDay - offsetDataStop))
+
       dataForPrediction <- dataExtra |>
         dplyr::filter(dayGrp == dg)
-      
-      rep.int(NA_real_, nrow(dataForPrediction))
-    }
-  }) |>
-    purrr::list_c()
-  
-  truncatedEMA(predictedVsMeasured, blockSize, -Inf, +Inf)
-}
 
+      if (nrow(dataForModel) == 0) {
+        return(rep.int(NA_real_, nrow(dataForPrediction)))
+      }
 
-#' Store Advanced Model
-#' 
-#' Stores a model from advanced PBRTQC in a global variable for later analysis.
-#'
-#' @param model The model.
-#' @param name The name of the advanced PBRTQC method.
-#' @param hash Hash of data and formular of model
-#' @param from first day of data
-#' @param to last day of data
-#'
-#' @return model
-#' @export
-store_advanced_model<- function(model, name, hash, from, to){
-  if (!exists("tempStore")){
-    tempStore <<- list()
+      # Build formula from column types in dataForModel
+      vars  <- setdiff(colnames(dataForModel),
+                       c("measurement", "dayGrp", "day", "measurementWithErrors"))
+      terms <- character(0)
+      for (v in vars) {
+        if (is.numeric(dataForModel[[v]][1])) {
+          terms <- c(terms, v)
+        } else if (length(unique(dataForModel[[v]])) > 1) {
+          terms <- c(terms, paste0("(1|", v, ")"))
+        }
+      }
+      if (length(terms) == 0) {
+        return(rep.int(NA_real_, nrow(dataForPrediction)))
+      }
+      form <- as.formula(paste("measurement ~", paste(terms, collapse = " + ")))
+
+      hash   <- digest::digest(dataForModel)
+      cached <- .cache[[hash]]
+
+      if (is.null(cached)) {
+        requireNamespace("multilevelmod", quietly = TRUE)
+        model <- parsnip::linear_reg() |>
+          parsnip::set_engine("lmer") |>
+          parsnip::fit(formula = form, data = dataForModel)
+
+        cached <- list(model = model,
+                       from  = min(dataForModel$day),
+                       to    = max(dataForModel$day))
+        .cache[[hash]] <<- cached
+      }
+
+      dataForPrediction$measurementWithErrors <-
+        parsnip::predict_raw(cached$model, dataForPrediction,
+                             opts = list(allow.new.levels = TRUE))
+
+      dataForPrediction$measurement - dataForPrediction$measurementWithErrors
+    }) |>
+      purrr::list_c()
+
+    truncatedEMA(predictedVsMeasured, blockSize, -Inf, +Inf)
   }
-  tempStore[[name]][[hash]][['model']] <<- model
-  tempStore[[name]][[hash]]['from'] <<- from
-  tempStore[[name]][[hash]]['to'] <<- to
-  
-  model 
-}
 
-retrieve_advanced_model <- function(name, hash){
-  if (!exists("tempStore")){
-    return(NULL)
-  }
-  purrr::pluck(tempStore, name, hash, 'model')
+  getStore <- function() list(regAdj = .cache)
+
+  list(fn = fn, getStore = getStore)
 }
   
 

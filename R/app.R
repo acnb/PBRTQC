@@ -45,7 +45,12 @@ app <- function(...){
     res
   }
   
-  server <- function(input, output) {
+  server <- function(input, output, session) {
+    # One registry per session — no shared global state.
+    # To add a future advanced algorithm: append to this list.
+    advancedRegistry <- list(
+      regAdjEMA = makeRegAdjEMA()
+    )
     csvData <- shiny::reactive({ 
       shiny::req(input$file1)
       
@@ -193,13 +198,13 @@ app <- function(...){
       blockSizes <- seq(10, 150, by = 35) 
       
       funcsAll <- switch (input$algo,
-                          'mean' = list("mean" = rollMean),
-                          'mean.del' = list("mean.del" = rollMean.del),
-                          'median' = list( 'median' = rollMed),
-                          'median.del' = list('median.del' = rollMed.del),
-                          'ema' = list('EMA' = truncatedEMA),
-                          'ema.del' = list('EMA.del' = truncatedEMA.del),
-                          'regAdjEMA' = list('regAdjEMA' = regAdjEMA)
+                          'mean'      = list("mean"      = rollMean),
+                          'mean.del'  = list("mean.del"  = rollMean.del),
+                          'median'    = list("median"    = rollMed),
+                          'median.del'= list("median.del"= rollMed.del),
+                          'ema'       = list("EMA"       = truncatedEMA),
+                          'ema.del'   = list("EMA.del"   = truncatedEMA.del),
+                          'regAdjEMA' = list("regAdjEMA" = advancedRegistry$regAdjEMA$fn)
       )
       
       data <- csvData()
@@ -307,31 +312,28 @@ app <- function(...){
         shiny::renderText(dataToText(bestBias[1,], minTruncation(), 
                                      maxTruncation()))
       
-      #Advanced Simulation output
-      if(exists("tempStore")){
-        advanced_results <- analyse_models(tempStore)
+      # Advanced Simulation output
+      # Collect stores from all registry entries that were active this run
+      combinedStore <- purrr::map(advancedRegistry, function(inst) inst$getStore()) |>
+        purrr::list_flatten()
 
-        purrr::walk2(advanced_results[["plot"]], 
+      if (length(combinedStore) > 0) {
+        advanced_results <- analyse_models(combinedStore)
+
+        purrr::walk2(advanced_results[["plot"]],
                      seq_along(advanced_results[["plot"]]),
-                     function(p, idx){
-                       output[[paste("advancedPlots", idx, sep = "_")]] <- 
-                         shiny::renderPlot({p})
-                       }
-                     )
-
+                     function(p, idx) {
+                       output[[paste("advancedPlots", idx, sep = "_")]] <-
+                         shiny::renderPlot({ p })
+                     })
 
         output$advancedPlots <-
           shiny::renderUI({
-
             plot_output_list <-
-              purrr::map2(advanced_results[['plot']],
-                          seq_along(advanced_results[["plot"]]),
-                          function(p, idx){
-                           plotname <- paste("advancedPlots", idx, sep = "_")
-                           shiny::plotOutput(plotname, inline=TRUE)
-                           }
-                         )
-            
+              purrr::map(seq_along(advanced_results[["plot"]]), function(idx) {
+                shiny::plotOutput(paste("advancedPlots", idx, sep = "_"),
+                                  inline = TRUE)
+              })
             do.call(shiny::tagList, plot_output_list)
           })
       }
