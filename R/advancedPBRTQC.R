@@ -112,6 +112,11 @@ makeDeviceDiff <- function() {
     n      <- length(measurement)
     device <- dataExtra$device
 
+    if (is.null(device)) {
+      warning("makeDeviceDiff: column 'device' missing from dataExtra — returning all NAs")
+      return(rep(NA_real_, n))
+    }
+
     overall_med <- slider::slide_dbl(
       measurement, median,
       .before   = blockSize - 1,

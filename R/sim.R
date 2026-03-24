@@ -124,28 +124,37 @@ simFunction <- function(data, bias, fxs, blockSize,
 }
 
 calcFunctions <- function(data, bias, fxs, blockSize,
-                          lowerTrunc, upperTrunc, 
+                          lowerTrunc, upperTrunc,
                           lead, calcContinous){
-  
+
   dataSel <- data |>
     dplyr::select(measurement, day)
-  
-  dataExtra <- data 
-  
+
+  dataExtra <- data
+
   if (!calcContinous){
     dataSel <- dataSel |>
       dplyr::group_by(day)
-    
+
     dataExtra <- dataExtra |>
       dplyr::group_by(day)
   }
 
-  
+  # If a 'device' column is present, bias only the first device (by row order).
+  # This simulates a single-device systematic error rather than a lab-wide shift,
+  # which is the relevant scenario for makeDeviceDiff.
+  # Without a 'device' column, all measurements are biased as before.
+  isbiased <- if ("device" %in% colnames(data))
+    data$device == data$device[[1L]]
+  else
+    rep(TRUE, nrow(data))
+
   dataSel |>
     dplyr::mutate(leadtime = 1:dplyr::n() <= lead) |>
     dplyr::mutate(newValue = dplyr::case_when(
-      leadtime ~ as.double(measurement),
-      !leadtime ~ as.double(measurement * (1 + bias))
+      leadtime             ~ as.double(measurement),
+      !leadtime & isbiased ~ as.double(measurement * (1 + bias)),
+      TRUE                 ~ as.double(measurement)
     )) |>
     dplyr::mutate_at(dplyr::vars(newValue), 
                      .funs = fxs, blockSize = blockSize, 
