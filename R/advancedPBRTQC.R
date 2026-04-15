@@ -95,7 +95,45 @@ makeRegAdjEMA <- function(offsetDataStart = 120,
 }
   
 
-#' Factory for device-difference PBRTQC
+# Internal helper used by makeDeviceDiff / makeDeviceMeanDiff
+.makeDeviceDiffWith <- function(estimator, fname) {
+  fn <- function(measurement, blockSize, ll, ul, dataExtra) {
+    measurement[measurement < ll] <- ll
+    measurement[measurement > ul] <- ul
+
+    n      <- length(measurement)
+    device <- dataExtra$device
+
+    if (is.null(device)) {
+      warning(fname, ": column 'device' missing from dataExtra — returning all NAs")
+      return(rep(NA_real_, n))
+    }
+
+    overall_est <- slider::slide_dbl(
+      measurement, estimator,
+      .before   = blockSize - 1,
+      .complete = TRUE
+    )
+
+    device_est <- rep(NA_real_, n)
+    for (dev in unique(device)) {
+      idx <- which(device == dev)
+      device_est[idx] <- slider::slide_dbl(
+        measurement[idx], estimator,
+        .before   = blockSize - 1,
+        .complete = TRUE
+      )
+    }
+
+    device_est - overall_est
+  }
+
+  getStore <- function() list()
+
+  list(fn = fn, getStore = getStore)
+}
+
+#' Factory for device-difference PBRTQC (median)
 #'
 #' At each time point computes the difference between the per-device rolling
 #' median and the overall rolling median.  Requires a column \code{device} in
@@ -105,35 +143,112 @@ makeRegAdjEMA <- function(offsetDataStart = 120,
 #'   \code{\link{makeRegAdjEMA}})
 #' @export
 makeDeviceDiff <- function() {
-  fn <- function(measurement, blockSize, ll, ul, dataExtra) {
-    measurement[measurement < ll] <- ll
-    measurement[measurement > ul] <- ul
+  .makeDeviceDiffWith(median, "makeDeviceDiff")
+}
 
-    n      <- length(measurement)
-    device <- dataExtra$device
+#' Factory for device-difference PBRTQC (mean)
+#'
+#' At each time point computes the difference between the per-device rolling
+#' mean and the overall rolling mean.  Requires a column \code{device} in
+#' \code{dataExtra}.
+#'
+#' @return A list with \code{fn} and \code{getStore} (same interface as
+#'   \code{\link{makeRegAdjEMA}})
+#' @export
+makeDeviceMeanDiff <- function() {
+  .makeDeviceDiffWith(mean, "makeDeviceMeanDiff")
+}
 
-    if (is.null(device)) {
-      warning("makeDeviceDiff: column 'device' missing from dataExtra — returning all NAs")
-      return(rep(NA_real_, n))
+
+# Internal helper: count run lengths of out-of-bounds values.
+# Returns the consecutive count for values above ul (side +1) or below ll
+# (side -1).  Switches between sides reset the count to 1.  Values within
+# [ll, ul] return 0 and reset the run state.  NA values propagate and also
+# reset the run state.
+.countRunLengths <- function(values, ll, ul) {
+  if (ll > ul) stop("ll must be <= ul")
+
+  n             <- length(values)
+  result        <- numeric(n)
+  current_side  <- 0L   # 0 = none, 1 = above ul, -1 = below ll
+  current_count <- 0L
+
+  for (i in seq_len(n)) {
+    v <- values[i]
+    if (is.na(v)) {
+      result[i]     <- NA_real_
+      current_side  <- 0L
+      current_count <- 0L
+    } else if (v > ul) {
+      if (current_side == 1L) {
+        current_count <- current_count + 1L
+      } else {
+        current_count <- 1L
+        current_side  <- 1L
+      }
+      result[i] <- current_count
+    } else if (v < ll) {
+      if (current_side == -1L) {
+        current_count <- current_count + 1L
+      } else {
+        current_count <- 1L
+        current_side  <- -1L
+      }
+      result[i] <- current_count
+    } else {
+      result[i]     <- 0
+      current_side  <- 0L
+      current_count <- 0L
     }
+  }
+  result
+}
 
-    overall_med <- slider::slide_dbl(
-      measurement, median,
-      .before   = blockSize - 1,
-      .complete = TRUE
-    )
+#' Factory for run-length counter PBRTQC
+#'
+#' Wraps a base PBRTQC function (such as \code{rollMed}) and counts
+#' consecutive violations on the same side of the inner control limits.
+#' A switch from above \code{iucl} to below \code{ilcl} (or vice versa)
+#' resets the counter to 1.  Values within \code{[ilcl, iucl]} return 0.
+#' NA values (e.g. warm-up period) propagate as NA and also reset the run
+#' state.
+#'
+#' The three limit parameters serve distinct roles:
+#' \describe{
+#'   \item{Truncation limits (\code{ll}, \code{ul})}{Passed at call time to
+#'     \code{baseFn} (e.g. for winsorisation).  Set via \code{simPBRTQC()}.}
+#'   \item{Inner control limits (\code{ilcl}, \code{iucl})}{Captured at
+#'     factory time.  Used by the run-length counter to decide whether the
+#'     output of \code{baseFn} constitutes a violation.}
+#'   \item{Outer control limits}{Computed by \code{simPBRTQC()} from the
+#'     run-length counter output; determine when an alarm is raised.}
+#' }
+#'
+#' @param baseFn A PBRTQC algorithm function with the standard signature
+#'   \code{function(measurement, blockSize, ll, ul, dataExtra = NULL)}.
+#'   The canonical choice is \code{rollMed}.
+#' @param ilcl Lower inner control limit: the run-length counter increments
+#'   whenever the output of \code{baseFn} is below \code{ilcl}.
+#' @param iucl Upper inner control limit: the run-length counter increments
+#'   whenever the output of \code{baseFn} is above \code{iucl}.
+#'   Must satisfy \code{ilcl <= iucl}.
+#'
+#' @return A list with:
+#'   \describe{
+#'     \item{\code{fn}}{Algorithm function suitable for \code{simPBRTQC()}.
+#'       Returns a numeric vector of the same length as \code{measurement}:
+#'       run-length counts (>= 1) for violations, 0 for in-bounds values,
+#'       and NA for warm-up positions.}
+#'     \item{\code{getStore}}{Returns an empty list (no internal state)}
+#'   }
+#' @export
+makeRunLengthCounter <- function(baseFn, ilcl, iucl) {
+  if (!is.function(baseFn)) stop("'baseFn' must be a function")
+  if (ilcl > iucl) stop("'ilcl' must be <= 'iucl'")
 
-    device_med <- rep(NA_real_, n)
-    for (dev in unique(device)) {
-      idx <- which(device == dev)
-      device_med[idx] <- slider::slide_dbl(
-        measurement[idx], median,
-        .before   = blockSize - 1,
-        .complete = TRUE
-      )
-    }
-
-    device_med - overall_med
+  fn <- function(measurement, blockSize, ll, ul, dataExtra = NULL) {
+    base_values <- baseFn(measurement, blockSize, ll, ul, dataExtra)
+    .countRunLengths(base_values, ilcl, iucl)
   }
 
   getStore <- function() list()

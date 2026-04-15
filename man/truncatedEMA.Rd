@@ -4,7 +4,7 @@
 \alias{truncatedEMA}
 \title{Exponential Moving Average with winsorizing}
 \usage{
-truncatedEMA(measurement, blockSize, ll, ul)
+truncatedEMA(measurement, blockSize, ll, ul, dataExtra = NULL)
 }
 \arguments{
 \item{measurement}{a vector of measurements}
