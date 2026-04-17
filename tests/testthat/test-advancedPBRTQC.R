@@ -220,3 +220,93 @@ test_that("tighter ilcl/iucl catches violations that ll/ul would not", {
   result_separate <- rlc_separate$fn(c(3, 3, 3), blockSize = 1, ll = 0, ul = 4)
   expect_equal(result_separate, c(1, 2, 3))
 })
+
+# ── makePercentileRLC ────────────────────────────────────────────────────────
+
+make_rlc_data <- function(n_days = 30, n_per_day = 20) {
+  set.seed(1)
+  data.frame(
+    day         = rep(seq_len(n_days), each = n_per_day),
+    measurement = rnorm(n_days * n_per_day, mean = 1.0, sd = 0.1)
+  )
+}
+
+test_that("makePercentileRLC returns factory list with fn and getStore", {
+  factory <- makePercentileRLC(
+    data       = make_rlc_data(),
+    percentage = 0.9,
+    block_size = 20L,
+    ll         = 0.7,
+    ul         = 1.3
+  )
+  expect_type(factory, "list")
+  expect_true(is.function(factory$fn))
+  expect_true(is.function(factory$getStore))
+})
+
+test_that("makePercentileRLC fn returns vector of same length as input", {
+  factory <- makePercentileRLC(
+    data       = make_rlc_data(),
+    percentage = 0.9,
+    block_size = 20L,
+    ll         = 0.7,
+    ul         = 1.3
+  )
+  set.seed(2)
+  x      <- rnorm(50, mean = 1.0, sd = 0.1)
+  result <- factory$fn(x, blockSize = 20L, ll = 0.7, ul = 1.3)
+  expect_length(result, 50)
+})
+
+test_that("makePercentileRLC produces valid inner limits (ilcl <= iucl)", {
+  # If ilcl > iucl, makeRunLengthCounter would throw an error
+  expect_no_error(
+    makePercentileRLC(
+      data       = make_rlc_data(),
+      percentage = 0.9,
+      block_size = 20L,
+      ll         = 0.7,
+      ul         = 1.3
+    )
+  )
+})
+
+test_that("makePercentileRLC can be passed to evalAlgos as factory in fxs", {
+  d <- make_rlc_data()
+  factory <- makePercentileRLC(
+    data       = d,
+    percentage = 0.9,
+    block_size = 20L,
+    ll         = 0.7,
+    ul         = 1.3
+  )
+  expect_no_error(
+    evalAlgos(
+      data_for_sim = d,
+      bias         = 0.1,
+      ll           = 0.7,
+      ul           = 1.3,
+      fxs          = list("RLC90" = factory),
+      fxs_device   = list(),
+      max_samples  = 20L
+    )
+  )
+})
+
+test_that("makePercentileRLC errors on invalid percentage", {
+  d <- make_rlc_data()
+  expect_error(
+    makePercentileRLC(d, percentage = 1.1, block_size = 20L, ll = 0.7, ul = 1.3),
+    "percentage"
+  )
+  expect_error(
+    makePercentileRLC(d, percentage = 0, block_size = 20L, ll = 0.7, ul = 1.3),
+    "percentage"
+  )
+  expect_error(
+    makePercentileRLC(d, percentage = NA_real_, block_size = 20L, ll = 0.7, ul = 1.3),
+    "percentage"
+  )
+})
+
+
