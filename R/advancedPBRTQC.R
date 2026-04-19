@@ -281,33 +281,35 @@ makeRunLengthCounter <- function(baseFn, ilcl, iucl) {
 
 #' Factory for percentile-based run-length counter PBRTQC
 #'
-#' Computes inner control limits from baseline data so that the central
-#' \code{percentage} of rolling-median values fall within \code{[ilcl, iucl]},
-#' then wraps \code{\link{rollMed}} inside \code{\link{makeRunLengthCounter}}.
+#' Returns a function with the same signature as \code{\link{rollMed}} that
+#' computes inner control limits from baseline data on the fly (per
+#' \code{blockSize}/\code{ll}/\code{ul} combination) and counts consecutive
+#' violations against those limits.
 #'
-#' The inner limits are derived from \code{\link{findControlLimits}} with
-#' \code{percAccAlarms = 1 - percentage}, i.e. a 90\% interval uses
-#' \code{percAccAlarms = 0.10}.  The limits are fixed at factory creation
-#' time for the supplied \code{block_size}.
+#' Inner limits are derived via \code{\link{findControlLimits}} so that the
+#' central \code{percentage} of \code{innerFn} values fall within
+#' \code{[ilcl, iucl]} (\code{percAccAlarms = 1 - percentage}).  Limits are
+#' cached per unique \code{(blockSize, ll, ul)} combination, so iterating over
+#' block sizes does not re-compute limits unnecessarily.
 #'
 #' @param data A data frame with columns \code{day} (integer) and
 #'   \code{measurement} (numeric) — the baseline dataset used to derive
 #'   inner limits.
 #' @param percentage Numeric scalar in (0, 1).  Proportion of baseline
-#'   rolling-median values that should fall within the inner limits
+#'   \code{innerFn} values that should fall within the inner limits
 #'   (e.g. \code{0.9} for 90\%).
-#' @param block_size Integer scalar.  Block size used when computing the
-#'   inner limits via \code{\link{findControlLimits}}.
-#' @param ll Numeric scalar.  Lower truncation limit forwarded to
-#'   \code{\link{rollMed}} at call time.
-#' @param ul Numeric scalar.  Upper truncation limit forwarded to
-#'   \code{\link{rollMed}} at call time.
+#' @param innerFn A function with the standard PBRTQC signature
+#'   \code{function(measurement, blockSize, ll, ul, dataExtra = NULL)}.
+#'   Used both for deriving inner limits from \code{data} and for computing
+#'   rolling values on new measurements.  Defaults to \code{\link{rollMed}}.
 #'
-#' @return A list with \code{fn} and \code{getStore} (same interface as
-#'   \code{\link{makeRunLengthCounter}}).
+#' @return A function with signature
+#'   \code{function(measurement, blockSize, ll, ul, dataExtra = NULL)}
+#'   that returns a numeric vector of run-length counts (same length as
+#'   \code{measurement}): \code{NA} during warm-up, \code{0} for in-bounds
+#'   values, and incrementing integers for consecutive violations.
 #' @export
-makePercentileRLC <- function(data, percentage, block_size, ll, ul) {
-  # isTRUE prevents NA from slipping through the || chain
+makePercentileRLC <- function(data, percentage, innerFn = rollMed) {
   if (
     !isTRUE(
       is.numeric(percentage) &&
@@ -318,43 +320,56 @@ makePercentileRLC <- function(data, percentage, block_size, ll, ul) {
   ) {
     stop("'percentage' must be a single numeric value in (0, 1)")
   }
-
-  # Derive inner limits: central `percentage` of the rolling-median distribution.
-  # NOTE: ll and ul passed to factory$fn at call time must match those used here;
-  # mismatched truncation limits produce statistically invalid inner limits.
-  perc_acc <- 1 - percentage
-  limits <- findControlLimits(
-    data = data,
-    blockSize = block_size,
-    lowerTrunc = ll,
-    upperTrunc = ul,
-    fxs = list(rollMed = rollMed),
-    percAccAlarms = perc_acc,
-    calcContinous = TRUE
-  )
-
-  matched <- limits[limits$type == "rollMed", ]
-  if (nrow(matched) != 1L) {
-    stop(
-      "findControlLimits did not return exactly one 'rollMed' row; ",
-      "check that 'data' contains enough observations for 'block_size'"
-    )
+  if (!is.function(innerFn)) {
+    stop("'innerFn' must be a function with signature (measurement, blockSize, ll, ul, dataExtra)")
   }
 
-  ilcl <- matched$lcl
-  iucl <- matched$ucl
+  perc_acc  <- 1 - percentage
+  cache     <- new.env(parent = emptyenv())
 
-  if (!is.finite(ilcl) || !is.finite(iucl)) {
-    stop(
-      "inner control limits are not finite (ilcl = ",
-      ilcl,
-      ", iucl = ",
-      iucl,
-      "); 'block_size' may be too large relative to samples per day in 'data'"
-    )
+  function(measurement, blockSize, ll, ul, dataExtra = NULL) {
+    cache_key <- paste(blockSize, ll, ul, sep = "\x1f")
+
+    lims <- if (exists(cache_key, envir = cache, inherits = FALSE)) {
+      get(cache_key, envir = cache, inherits = FALSE)
+    } else {
+      limits <- findControlLimits(
+        data          = data,
+        blockSize     = blockSize,
+        lowerTrunc    = ll,
+        upperTrunc    = ul,
+        fxs           = list(innerFn = innerFn),
+        percAccAlarms = perc_acc,
+        calcContinous = TRUE
+      )
+
+      matched <- limits[limits$type == "innerFn", ]
+      if (nrow(matched) != 1L) {
+        stop(
+          "findControlLimits did not return exactly one 'innerFn' row; ",
+          "check that 'data' contains enough observations for 'blockSize'"
+        )
+      }
+
+      ilcl <- matched$lcl
+      iucl <- matched$ucl
+
+      if (!is.finite(ilcl) || !is.finite(iucl)) {
+        stop(
+          "inner control limits are not finite (ilcl = ", ilcl,
+          ", iucl = ", iucl,
+          "); 'blockSize' may be too large relative to samples per day in 'data'"
+        )
+      }
+
+      computed <- list(ilcl = ilcl, iucl = iucl)
+      assign(cache_key, computed, envir = cache)
+      computed
+    }
+
+    base_values <- innerFn(measurement, blockSize, ll, ul, dataExtra)
+    .countRunLengths(base_values, lims$ilcl, lims$iucl)
   }
-
-  makeRunLengthCounter(rollMed, ilcl = ilcl, iucl = iucl)
 }
 
 

@@ -231,81 +231,169 @@ make_rlc_data <- function(n_days = 30, n_per_day = 20) {
   )
 }
 
-test_that("makePercentileRLC returns factory list with fn and getStore", {
-  factory <- makePercentileRLC(
-    data       = make_rlc_data(),
-    percentage = 0.9,
-    block_size = 20L,
-    ll         = 0.7,
-    ul         = 1.3
-  )
-  expect_type(factory, "list")
-  expect_true(is.function(factory$fn))
-  expect_true(is.function(factory$getStore))
+# ===========================================================================
+# Group L: Factory-Rückgabe — gibt eine direkte Funktion zurück (kein List)
+# ===========================================================================
+
+test_that("makePercentileRLC returns a function, not a list", {
+  fn <- makePercentileRLC(data = make_rlc_data(), percentage = 0.9)
+  expect_true(is.function(fn))
+  expect_false(is.list(fn))
 })
 
-test_that("makePercentileRLC fn returns vector of same length as input", {
-  factory <- makePercentileRLC(
-    data       = make_rlc_data(),
-    percentage = 0.9,
-    block_size = 20L,
-    ll         = 0.7,
-    ul         = 1.3
-  )
+# ===========================================================================
+# Group M: Output-Eigenschaften — Länge, Warm-up NAs
+# ===========================================================================
+
+test_that("makePercentileRLC: returned function has same length as input", {
   set.seed(2)
+  fn <- makePercentileRLC(data = make_rlc_data(), percentage = 0.9)
+  x  <- rnorm(50, mean = 1.0, sd = 0.1)
+  expect_length(fn(x, blockSize = 20L, ll = 0.7, ul = 1.3), 50)
+})
+
+test_that("makePercentileRLC: first blockSize-1 values are NA (warm-up)", {
+  fn <- makePercentileRLC(data = make_rlc_data(), percentage = 0.9)
+  set.seed(3)
   x      <- rnorm(50, mean = 1.0, sd = 0.1)
-  result <- factory$fn(x, blockSize = 20L, ll = 0.7, ul = 1.3)
-  expect_length(result, 50)
+  result <- fn(x, blockSize = 5L, ll = 0.7, ul = 1.3)
+  expect_true(all(is.na(result[1:4])))
+  expect_false(is.na(result[5]))
 })
 
-test_that("makePercentileRLC produces valid inner limits (ilcl <= iucl)", {
-  # If ilcl > iucl, makeRunLengthCounter would throw an error
+# ===========================================================================
+# Group N: Korrekte Zählwerte — 0 innerhalb Limits, Inkrement bei Violations
+# ===========================================================================
+
+test_that("makePercentileRLC: produces valid inner limits (no error)", {
   expect_no_error(
-    makePercentileRLC(
-      data       = make_rlc_data(),
-      percentage = 0.9,
-      block_size = 20L,
-      ll         = 0.7,
-      ul         = 1.3
-    )
+    makePercentileRLC(data = make_rlc_data(), percentage = 0.9)
   )
 })
 
-test_that("makePercentileRLC can be passed to evalAlgos as factory in fxs", {
-  d <- make_rlc_data()
-  factory <- makePercentileRLC(
-    data       = d,
+test_that("makePercentileRLC: returns numeric run-length counts", {
+  fn <- makePercentileRLC(data = make_rlc_data(), percentage = 0.9)
+  set.seed(4)
+  x      <- rnorm(50, mean = 1.0, sd = 0.1)
+  result <- fn(x, blockSize = 20L, ll = 0.7, ul = 1.3)
+  non_na <- result[!is.na(result)]
+  expect_true(is.numeric(result))
+  expect_true(all(non_na >= 0))
+})
+
+# ===========================================================================
+# Group O: Iteration über blockSize — verschiedene blockSize-Werte funktionieren
+# ===========================================================================
+
+test_that("makePercentileRLC: callable with different blockSize values", {
+  fn <- makePercentileRLC(data = make_rlc_data(), percentage = 0.9)
+  set.seed(5)
+  x <- rnorm(60, mean = 1.0, sd = 0.1)
+  expect_no_error(fn(x, blockSize = 10L, ll = 0.7, ul = 1.3))
+  expect_no_error(fn(x, blockSize = 20L, ll = 0.7, ul = 1.3))
+  expect_no_error(fn(x, blockSize = 30L, ll = 0.7, ul = 1.3))
+})
+
+test_that("makePercentileRLC: different blockSize yields different results", {
+  fn <- makePercentileRLC(data = make_rlc_data(), percentage = 0.9)
+  set.seed(6)
+  x   <- rnorm(60, mean = 1.0, sd = 0.1)
+  r10 <- fn(x, blockSize = 10L, ll = 0.7, ul = 1.3)
+  r30 <- fn(x, blockSize = 30L, ll = 0.7, ul = 1.3)
+  # Warm-up lengths differ: 9 vs 29 NAs
+  expect_true(sum(is.na(r10)) < sum(is.na(r30)))
+})
+
+# ===========================================================================
+# Group P: Caching — Limits werden gecacht, innerFn nur einmal pro Kombination aufgerufen
+# ===========================================================================
+
+test_that("makePercentileRLC: limits are cached (innerFn called once per blockSize/ll/ul)", {
+  call_count <- 0L
+  counting_fn <- function(measurement, blockSize, ll, ul, dataExtra = NULL) {
+    call_count <<- call_count + 1L
+    rollMed(measurement, blockSize, ll, ul, dataExtra)
+  }
+  fn <- makePercentileRLC(
+    data       = make_rlc_data(),
     percentage = 0.9,
-    block_size = 20L,
-    ll         = 0.7,
-    ul         = 1.3
+    innerFn    = counting_fn
   )
+  set.seed(7)
+  x <- rnorm(50, mean = 1.0, sd = 0.1)
+
+  # 1. Call: Limit-Berechnung (mehrere innerFn-Calls auf baseline-data) + 1 Mess-Call
+  fn(x, blockSize = 20L, ll = 0.7, ul = 1.3)
+  calls_after_first <- call_count
+
+  # 2. Call gleiche Parameter: Limits gecacht → nur noch 1 Mess-Call
+  fn(x, blockSize = 20L, ll = 0.7, ul = 1.3)
+  calls_after_second <- call_count
+
+  # 3. Call neue blockSize: Limits neu berechnet → wieder mehr als 1 Call
+  fn(x, blockSize = 10L, ll = 0.7, ul = 1.3)
+  calls_after_third <- call_count
+
+  # 1. Call hat mehr als 1 Call gebraucht (Limit-Berechnung + Messung)
+  expect_gt(calls_after_first, 1L)
+  # 2. Call (gecacht) hat genau 1 zusätzlichen Call gebraucht (nur Messung)
+  expect_equal(calls_after_second - calls_after_first, 1L)
+  # 3. Call (neue blockSize) hat wieder mehr als 1 zusätzlichen Call gebraucht
+  expect_gt(calls_after_third - calls_after_second, 1L)
+})
+
+# ===========================================================================
+# Group Q: Fehlerbehandlung — ungültiges percentage, ungültige innerFn
+# ===========================================================================
+
+test_that("makePercentileRLC errors on percentage >= 1 or <= 0 or NA", {
+  d <- make_rlc_data()
+  expect_error(makePercentileRLC(d, percentage = 1.1),  "percentage")
+  expect_error(makePercentileRLC(d, percentage = 1.0),  "percentage")
+  expect_error(makePercentileRLC(d, percentage = 0),    "percentage")
+  expect_error(makePercentileRLC(d, percentage = NA_real_), "percentage")
+})
+
+test_that("makePercentileRLC errors when innerFn is not a function", {
+  d <- make_rlc_data()
+  expect_error(makePercentileRLC(d, percentage = 0.9, innerFn = "rollMed"), "innerFn")
+  expect_error(makePercentileRLC(d, percentage = 0.9, innerFn = NULL),      "innerFn")
+})
+
+# ===========================================================================
+# Group R: Custom innerFn — eigene Funktion mit rollMed-Signatur
+# ===========================================================================
+
+test_that("makePercentileRLC: custom innerFn is used instead of rollMed", {
+  # rollMean hat die gleiche Signatur wie rollMed
+  fn_mean <- makePercentileRLC(data = make_rlc_data(), percentage = 0.9, innerFn = rollMean)
+  fn_med  <- makePercentileRLC(data = make_rlc_data(), percentage = 0.9)
+  set.seed(8)
+  x <- rnorm(60, mean = 1.0, sd = 0.1)
+  expect_no_error(fn_mean(x, blockSize = 20L, ll = 0.7, ul = 1.3))
+  # Ergebnisse können sich unterscheiden (verschiedene inner functions)
+  r_mean <- fn_mean(x, blockSize = 20L, ll = 0.7, ul = 1.3)
+  r_med  <- fn_med(x,  blockSize = 20L, ll = 0.7, ul = 1.3)
+  expect_length(r_mean, length(r_med))
+})
+
+# ===========================================================================
+# Group S: evalAlgos-Integration — plain function in fxs funktioniert
+# ===========================================================================
+
+test_that("makePercentileRLC can be passed directly to evalAlgos in fxs", {
+  d  <- make_rlc_data()
+  fn <- makePercentileRLC(data = d, percentage = 0.9)
   expect_no_error(
     evalAlgos(
       data_for_sim = d,
       bias         = 0.1,
       ll           = 0.7,
       ul           = 1.3,
-      fxs          = list("RLC90" = factory),
+      fxs          = list("RLC90" = fn),
       fxs_device   = list(),
       max_samples  = 20L
     )
-  )
-})
-
-test_that("makePercentileRLC errors on invalid percentage", {
-  d <- make_rlc_data()
-  expect_error(
-    makePercentileRLC(d, percentage = 1.1, block_size = 20L, ll = 0.7, ul = 1.3),
-    "percentage"
-  )
-  expect_error(
-    makePercentileRLC(d, percentage = 0, block_size = 20L, ll = 0.7, ul = 1.3),
-    "percentage"
-  )
-  expect_error(
-    makePercentileRLC(d, percentage = NA_real_, block_size = 20L, ll = 0.7, ul = 1.3),
-    "percentage"
   )
 })
 

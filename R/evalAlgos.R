@@ -28,6 +28,8 @@
 #'   per day passed to \code{\link{simPBRTQC}}. Default: \code{0.025}.
 #' @param max_samples Integer scalar. Maximum samples per day passed to
 #'   \code{\link{simPBRTQC}}. Default: \code{400L}.
+#'  @param block_sizes Integer scalar. Different block sizes passed to
+#'   \code{\link{simPBRTQC}}. Default: \code{seq(10, 150, by = 20)}.
 #'
 #' @return A tibble with one row per algorithm (\code{type}) containing
 #'   \code{blockSize}, \code{ucl}, \code{lcl}, \code{sumMNped},
@@ -63,7 +65,8 @@ evalAlgos <- function(
   fxs,
   fxs_device,
   perc_acc_alarms = 0.025,
-  max_samples = 400L
+  max_samples = 400L,
+  block_sizes = seq(10, 150, by = 20)
 ) {
   # Unwrap factory objects (list with $fn) to their inner function.
   # Plain functions are passed through unchanged.
@@ -75,7 +78,7 @@ evalAlgos <- function(
 
   # Test positive and negative bias multiples from 1x to 2x
   biases      <- c(bias * seq(1, 2, by = 0.2), bias * -1 * seq(1, 2, by = 0.2))
-  block_sizes <- seq(10, 150, by = 20)
+  
 
   truncation_limits <- data.frame(
     lowerTrunc = ll,
