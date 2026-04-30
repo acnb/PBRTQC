@@ -39,7 +39,8 @@ simPBRTQC <- function(
   fxs,
   percAccAlarms,
   calcContinous,
-  max_samples = NULL
+  max_samples = NULL,
+  label = ""
 ) {
   #numberOfDaysSimulated <- 100
 
@@ -91,6 +92,16 @@ simPBRTQC <- function(
 
   nVars <- nrow(params)
 
+  pb <- NULL
+  if (!shiny::isRunning()) {
+    prefix <- if (nzchar(label)) paste0("  ", label, "\n") else ""
+    pb <- progress::progress_bar$new(
+      format = paste0(prefix, "  [:bar] :current/:total | ETA :eta | :percent"),
+      total  = nVars,
+      clear  = FALSE
+    )
+  }
+
   # When a device column is present, bias is applied only to the device with the
   # most samples (matching the logic in calcFunctions). max_samples_affected
   # therefore reflects how many samples of that device can be measured per day
@@ -118,8 +129,8 @@ simPBRTQC <- function(
             1 / nVars,
             detail = paste('Bias:', bias, '; Block Size:', bs)
           )
-        } else {
-          message(paste('Bias:', bias, '; Block Size:', bs))
+        } else if (!is.null(pb)) {
+          pb$tick()
         }
 
         thisCls <- cls |>

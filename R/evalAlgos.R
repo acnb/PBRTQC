@@ -98,7 +98,8 @@ evalAlgos <- function(
     fxs,
     perc_acc_alarms,
     calcContinous = TRUE,
-    max_samples = max_samples
+    max_samples = max_samples,
+    label = "Standard algorithms"
   )
 
   # Device-level algorithms require a device column; skip silently if absent
@@ -111,7 +112,8 @@ evalAlgos <- function(
       fxs_device,
       perc_acc_alarms,
       calcContinous = TRUE,
-      max_samples = max_samples
+      max_samples = max_samples,
+      label = "Device algorithms"
     )
     res <- dplyr::bind_rows(res, res_device)
   }
